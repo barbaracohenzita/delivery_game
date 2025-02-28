@@ -1,242 +1,240 @@
-// Game setup
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const scoreDisplay = document.getElementById('score');
 
-// Audio (placeholders - add actual files to an 'audio' folder)
-const pickupSound = new Audio('audio/pickup.mp3');
-const deliverySound = new Audio('audio/delivery.mp3');
-const crashSound = new Audio('audio/crash.mp3');
-const boostSound = new Audio('audio/boost.mp3');
-
-// Player
-const player = {
-    x: 50,
-    y: 50,
-    width: 20,
-    height: 20,
-    speed: 4,
-    color: '#FF0000',
-    hasPizza: false,
-    boost: 0
-};
-
-// Game objects
-const pizza = { x: 0, y: 0, width: 25, height: 25, color: '#FFA500', active: false };
-const target = { x: 0, y: 0, width: 30, height: 30, color: '#008000', active: false };
-const obstacles = [];
-const powerUps = [];
-
 // Game state
 let score = 0;
-let timeLeft = 60;
+let day = 1;
 let gameActive = true;
-let deliveriesCompleted = 0;
-let level = 1;
-let obstacleSpeed = 2;
+let time = 0; // Game time in seconds
+const shops = []; // Pizza shops
+const houses = []; // Delivery destinations
+const roads = []; // Road segments
+const bikes = []; // Delivery bikes
 
 // Constants
-const OBSTACLE_PROPERTIES = { width: 40, height: 20, color: '#666666' };
-const POWERUP_PROPERTIES = { width: 20, height: 20, color: '#FFD700' };
+const SHOP = { width: 30, height: 30, color: '#FF6B6B' }; // Red for pizza shops
+const HOUSE = { width: 20, height: 20, color: '#4ECDC4' }; // Teal for houses
+const ROAD = { width: 10, color: '#666666' }; // Gray roads
+const BIKE = { size: 8, speed: 2, color: '#FFD93D' }; // Yellow bikes
 
-// Input
-const keys = {};
-window.addEventListener('keydown', (e) => keys[e.key] = true);
-window.addEventListener('keyup', (e) => keys[e.key] = false);
+// Mouse interaction
+let isDragging = false;
+let startX, startY;
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    startX = e.clientX - rect.left;
+    startY = e.clientY - rect.top;
+    isDragging = true;
+});
+canvas.addEventListener('mousemove', (e) => {});
+canvas.addEventListener('mouseup', (e) => {
+    if (isDragging) {
+        const rect = canvas.getBoundingClientRect();
+        const endX = e.clientX - rect.left;
+        const endY = e.clientY - rect.top;
+        addRoad(startX, startY, endX, endY);
+        isDragging = false;
+    }
+});
 
 // Spawning
-function spawnPizza() {
-    pizza.x = Math.random() * (canvas.width - pizza.width);
-    pizza.y = Math.random() * (canvas.height - pizza.height);
-    pizza.active = true;
-}
-
-function spawnTarget() {
-    target.x = Math.random() * (canvas.width - target.width);
-    target.y = Math.random() * (canvas.height - target.height);
-    target.active = true;
-}
-
-function spawnObstacle() {
-    obstacles.push({
-        x: Math.random() < 0.5 ? -OBSTACLE_PROPERTIES.width : canvas.width,
-        y: Math.random() * (canvas.height - OBSTACLE_PROPERTIES.height),
-        width: OBSTACLE_PROPERTIES.width,
-        height: OBSTACLE_PROPERTIES.height,
-        speed: (Math.random() < 0.5 ? 1 : -1) * obstacleSpeed,
-        color: OBSTACLE_PROPERTIES.color
+function spawnShop() {
+    shops.push({
+        x: Math.random() * (canvas.width - SHOP.width),
+        y: Math.random() * (canvas.height - SHOP.height),
+        width: SHOP.width,
+        height: SHOP.height,
+        color: SHOP.color
     });
 }
 
-function spawnPowerUp() {
-    powerUps.push({
-        x: Math.random() * (canvas.width - POWERUP_PROPERTIES.width),
-        y: Math.random() * (canvas.height - POWERUP_PROPERTIES.height),
-        width: POWERUP_PROPERTIES.width,
-        height: POWERUP_PROPERTIES.height,
-        color: POWERUP_PROPERTIES.color,
-        active: true
+function spawnHouse() {
+    houses.push({
+        x: Math.random() * (canvas.width - HOUSE.width),
+        y: Math.random() * (canvas.height - HOUSE.height),
+        width: HOUSE.width,
+        height: HOUSE.height,
+        color: HOUSE.color,
+        demand: 1 // Delivery demand
     });
+}
+
+function spawnBike(shop) {
+    bikes.push({
+        x: shop.x + shop.width / 2,
+        y: shop.y + shop.height / 2,
+        size: BIKE.size,
+        speed: BIKE.speed,
+        color: BIKE.color,
+        target: null,
+        path: []
+    });
+}
+
+// Road management
+function addRoad(x1, y1, x2, y2) {
+    const startObj = findNearestObject(x1, y1);
+    const endObj = findNearestObject(x2, y2);
+    if (startObj && endObj && startObj !== endObj) {
+        roads.push({
+            start: { x: startObj.x + startObj.width / 2, y: startObj.y + startObj.height / 2 },
+            end: { x: endObj.x + endObj.width / 2, y: endObj.y + endObj.height / 2 },
+            width: ROAD.width,
+            color: ROAD.color
+        });
+    }
+}
+
+function findNearestObject(x, y) {
+    let closest = null;
+    let minDist = Infinity;
+    [...shops, ...houses].forEach(obj => {
+        const dist = Math.hypot(x - (obj.x + obj.width / 2), y - (obj.y + obj.height / 2));
+        if (dist < minDist && dist < 50) { // Max connection distance
+            minDist = dist;
+            closest = obj;
+        }
+    });
+    return closest;
 }
 
 // Game logic
 function update() {
     if (!gameActive) return;
 
-    let currentSpeed = player.boost > 0 ? player.speed * 2 : player.speed;
-    if (keys['ArrowUp'] && player.y > 0) player.y -= currentSpeed;
-    if (keys['ArrowDown'] && player.y < canvas.height - player.height) player.y += currentSpeed;
-    if (keys['ArrowLeft'] && player.x > 0) player.x -= currentSpeed;
-    if (keys['ArrowRight'] && player.x < canvas.width - player.width) player.x += currentSpeed;
+    time += 1 / 60;
 
-    if (player.boost > 0) player.boost -= 1 / 60;
+    // Spawn new objects periodically
+    if (Math.random() < 0.005) spawnShop();
+    if (Math.random() < 0.01) spawnHouse();
 
-    if (pizza.active && checkCollision(player, pizza) && !player.hasPizza) {
-        player.hasPizza = true;
-        pizza.active = false;
-        pickupSound.play();
-        if (!target.active) spawnTarget();
-    }
-
-    if (target.active && checkCollision(player, target) && player.hasPizza) {
-        score += 15 + level * 5;
-        deliveriesCompleted++;
-        player.hasPizza = false;
-        target.active = false;
-        timeLeft += 3;
-        deliverySound.play();
-        spawnPizza();
-        checkLevelUp();
-        scoreDisplay.textContent = `Score: ${score} | Level: ${level}`;
-    }
-
-    if (Math.random() < 0.02 + level * 0.005) spawnObstacle();
-    obstacles.forEach((obs, index) => {
-        obs.x += obs.speed;
-        if (checkCollision(player, obs)) {
-            score -= 5;
-            timeLeft -= 2;
-            obstacles.splice(index, 1);
-            crashSound.play();
-            scoreDisplay.textContent = `Score: ${score} | Level: ${level}`;
-        }
-        if (obs.x < -obs.width || obs.x > canvas.width) obstacles.splice(index, 1);
+    // Spawn bikes from shops
+    shops.forEach(shop => {
+        if (Math.random() < 0.02 && bikes.length < 20) spawnBike(shop);
     });
 
-    if (Math.random() < 0.005) spawnPowerUp();
-    powerUps.forEach((pu, index) => {
-        if (checkCollision(player, pu) && pu.active) {
-            player.boost = 5;
-            pu.active = false;
-            powerUps.splice(index, 1);
-            boostSound.play();
+    // Update bikes
+    bikes.forEach((bike, index) => {
+        if (!bike.target) {
+            bike.target = houses.find(h => h.demand > 0);
+            if (bike.target) {
+                bike.path = findPath(bike, bike.target);
+                bike.target.demand--;
+            }
+        }
+        if (bike.path.length > 0) {
+            const next = bike.path[0];
+            const dx = next.x - bike.x;
+            const dy = next.y - bike.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist < bike.speed) {
+                bike.x = next.x;
+                bike.y = next.y;
+                bike.path.shift();
+            } else {
+                bike.x += (dx / dist) * bike.speed;
+                bike.y += (dy / dist) * bike.speed;
+            }
+        } else if (bike.target) {
+            score += 10;
+            bikes.splice(index, 1);
+            scoreDisplay.textContent = `Score: ${score} | Day: ${day}`;
         }
     });
 
-    timeLeft -= 1 / 60;
-    if (timeLeft <= 0) {
+    // Day progression
+    if (time > 30 * day) {
+        day++;
+        houses.forEach(h => h.demand += Math.floor(Math.random() * 2)); // Increase demand
+    }
+
+    // Game over condition
+    if (houses.some(h => h.demand > 5)) {
         gameActive = false;
-        alert(`Game Over! Level: ${level}, Deliveries: ${deliveriesCompleted}, Score: ${score}`);
+        alert(`Game Over! Day: ${day}, Score: ${score}`);
         resetGame();
     }
-
-    if (!pizza.active && !player.hasPizza && !target.active) spawnPizza();
 }
 
-function checkLevelUp() {
-    if (deliveriesCompleted >= level * 5) {
-        level++;
-        obstacleSpeed += 0.5;
-        timeLeft += 10;
+// Simple pathfinding
+function findPath(bike, target) {
+    const path = [];
+    let current = { x: bike.x, y: bike.y };
+    const targetPos = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+    
+    // Find nearest road segments
+    roads.forEach(road => {
+        if (Math.hypot(current.x - road.start.x, current.y - road.start.y) < 50) {
+            path.push(road.start);
+            if (Math.hypot(road.end.x - targetPos.x, road.end.y - targetPos.y) < 50) {
+                path.push(road.end);
+            }
+        }
+    });
+    
+    if (path.length === 0) {
+        path.push(targetPos); // Direct path if no roads
     }
+    return path;
 }
 
 // Drawing
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = '#808080';
-    ctx.fillRect(0, canvas.height/2 - 20, canvas.width, 40);
-
-    if (pizza.active) {
-        ctx.fillStyle = pizza.color;
+    // Draw roads
+    roads.forEach(road => {
+        ctx.strokeStyle = road.color;
+        ctx.lineWidth = road.width;
         ctx.beginPath();
-        ctx.arc(pizza.x + pizza.width/2, pizza.y + pizza.height/2, pizza.width/2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#8B0000';
-        ctx.beginPath();
-        ctx.arc(pizza.x + pizza.width/2 - 5, pizza.y + pizza.height/2 - 5, 3, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    ctx.fillStyle = player.boost > 0 ? '#FF4500' : player.color;
-    ctx.fillRect(player.x, player.y, player.width, player.height);
-    if (player.hasPizza) {
-        ctx.fillStyle = pizza.color;
-        ctx.beginPath();
-        ctx.arc(player.x + player.width/2, player.y - 10, 5, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    if (target.active) {
-        ctx.fillStyle = target.color;
-        ctx.fillRect(target.x, target.y, target.width, target.height);
-        ctx.fillStyle = '#8B4513';
-        ctx.beginPath();
-        ctx.moveTo(target.x, target.y);
-        ctx.lineTo(target.x + target.width/2, target.y - 15);
-        ctx.lineTo(target.x + target.width, target.y);
-        ctx.fill();
-    }
-
-    obstacles.forEach(obs => {
-        ctx.fillStyle = obs.color;
-        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
-        ctx.fillStyle = '#000000';
-        ctx.fillRect(obs.x + 5, obs.y + obs.height - 5, 5, 5);
-        ctx.fillRect(obs.x + obs.width - 10, obs.y + obs.height - 5, 5, 5);
+        ctx.moveTo(road.start.x, road.start.y);
+        ctx.lineTo(road.end.x, road.end.y);
+        ctx.stroke();
     });
 
-    powerUps.forEach(pu => {
-        if (pu.active) {
-            ctx.fillStyle = pu.color;
-            ctx.beginPath();
-            ctx.arc(pu.x + pu.width/2, pu.y + pu.height/2, pu.width/2, 0, Math.PI * 2);
-            ctx.fill();
-        }
+    // Draw shops
+    shops.forEach(shop => {
+        ctx.fillStyle = shop.color;
+        ctx.fillRect(shop.x, shop.y, shop.width, shop.height);
     });
 
-    ctx.fillStyle = 'black';
+    // Draw houses
+    houses.forEach(house => {
+        ctx.fillStyle = house.color;
+        ctx.fillRect(house.x, house.y, house.width, house.height);
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.fillText(house.demand, house.x + 5, house.y + 15);
+    });
+
+    // Draw bikes
+    bikes.forEach(bike => {
+        ctx.fillStyle = bike.color;
+        ctx.beginPath();
+        ctx.arc(bike.x, bike.y, bike.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // UI
+    ctx.fillStyle = '#333';
     ctx.font = '20px Arial';
-    ctx.fillText(`Time: ${Math.ceil(timeLeft)}s`, 10, 30);
-    ctx.fillText(`Deliveries: ${deliveriesCompleted}`, 10, 60);
-    ctx.fillText(`Boost: ${Math.ceil(player.boost)}s`, 10, 90);
+    ctx.fillText(`Time: ${Math.floor(time)}s`, 10, 30);
 }
 
-function checkCollision(obj1, obj2) {
-    return obj1.x < obj2.x + obj2.width &&
-           obj1.x + obj1.width > obj2.x &&
-           obj1.y < obj2.y + obj2.height &&
-           obj1.y + obj1.height > obj2.y;
-}
-
+// Reset
 function resetGame() {
-    player.x = 50;
-    player.y = 50;
-    player.hasPizza = false;
-    player.boost = 0;
-    pizza.active = false;
-    target.active = false;
-    obstacles.length = 0;
-    powerUps.length = 0;
     score = 0;
-    timeLeft = 60;
-    deliveriesCompleted = 0;
-    level = 1;
-    obstacleSpeed = 2;
+    day = 1;
+    time = 0;
+    shops.length = 0;
+    houses.length = 0;
+    roads.length = 0;
+    bikes.length = 0;
     gameActive = true;
-    scoreDisplay.textContent = `Score: ${score} | Level: ${level}`;
-    spawnPizza();
+    scoreDisplay.textContent = `Score: ${score} | Day: ${day}`;
+    spawnShop();
+    spawnHouse();
 }
 
 // Game loop
@@ -247,5 +245,6 @@ function gameLoop() {
 }
 
 // Start
-spawnPizza();
+spawnShop();
+spawnHouse();
 gameLoop();
