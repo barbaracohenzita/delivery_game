@@ -1,21 +1,32 @@
-canvas {
-    border: 1px solid #333;
-    background-color: #F5F5F5; /* Light gray like Mini Motorways */
-}
-
 body {
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
+    justify-content: center;
     height: 100vh;
     margin: 0;
     background-color: #E0E0E0;
-    font-family: Arial, sans-serif;
+    font-family: 'Arial', sans-serif;
 }
 
-#score {
-    font-size: 24px;
+canvas {
+    border: 1px solid #333;
+    background-color: #F5F5F5;
+    border-radius: 8px;
+}
+
+#ui {
+    display: flex;
+    justify-content: space-between;
+    width: 800px;
     margin-bottom: 10px;
+    font-size: 20px;
     color: #333;
+}
+
+#ui span {
+    background: #FFFFFF;
+    padding: 5px 10px;
+    border-radius: 5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
