@@ -7,19 +7,253 @@
     <style>
         canvas {
             border: 1px solid black;
+            background-color: #87CEEB; /* Sky blue background */
         }
         body {
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
             background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        #score {
+            font-size: 24px;
+            margin-bottom: 10px;
         }
     </style>
 </head>
 <body>
+    <div id="score">Score: 0</div>
     <canvas id="gameCanvas" width="600" height="400"></canvas>
-    <script src="game.js"></script>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+
+        // Player (bike) properties
+        const player = {
+            x: 50,
+            y: 50,
+            width: 20,
+            height: 20,
+            speed: 4,
+            color: '#FF0000', // Bright red
+            hasPizza: false
+        };
+
+        // Pizza properties
+        const pizza = {
+            x: 0,
+            y: 0,
+            width: 25,
+            height: 25,
+            color: '#FFA500', // Orange
+            active: false
+        };
+
+        // Delivery target (house) properties
+        const target = {
+            x: 0,
+            y: 0,
+            width: 30,
+            height: 30,
+            color: '#008000', // Green
+            active: false
+        };
+
+        // Obstacles (cars)
+        const obstacles = [];
+        const obstacleProperties = {
+            width: 40,
+            height: 20,
+            speed: 2,
+            color: '#666666' // Gray
+        };
+
+        // Game state
+        let score = 0;
+        let timeLeft = 60;
+        let gameActive = true;
+        let deliveriesCompleted = 0;
+
+        // Keyboard input
+        const keys = {};
+        window.addEventListener('keydown', (e) => keys[e.key] = true);
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+        // Spawn functions
+        function spawnPizza() {
+            pizza.x = Math.random() * (canvas.width - pizza.width);
+            pizza.y = Math.random() * (canvas.height - pizza.height);
+            pizza.active = true;
+        }
+
+        function spawnTarget() {
+            target.x = Math.random() * (canvas.width - target.width);
+            target.y = Math.random() * (canvas.height - target.height);
+            target.active = true;
+        }
+
+        function spawnObstacle() {
+            obstacles.push({
+                x: Math.random() < 0.5 ? -obstacleProperties.width : canvas.width,
+                y: Math.random() * (canvas.height - obstacleProperties.height),
+                width: obstacleProperties.width,
+                height: obstacleProperties.height,
+                speed: Math.random() < 0.5 ? obstacleProperties.speed : -obstacleProperties.speed,
+                color: obstacleProperties.color
+            });
+        }
+
+        // Game logic
+        function update() {
+            if (!gameActive) return;
+
+            // Player movement
+            if (keys['ArrowUp'] && player.y > 0) player.y -= player.speed;
+            if (keys['ArrowDown'] && player.y < canvas.height - player.height) player.y += player.speed;
+            if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+            if (keys['ArrowRight'] && player.x < canvas.width - player.width) player.x += player.speed;
+
+            // Handle collisions
+            if (pizza.active && checkCollision(player, pizza) && !player.hasPizza) {
+                player.hasPizza = true;
+                pizza.active = false;
+                if (!target.active) spawnTarget();
+            }
+
+            if (target.active && checkCollision(player, target) && player.hasPizza) {
+                score += 15;
+                deliveriesCompleted++;
+                player.hasPizza = false;
+                target.active = false;
+                timeLeft += 3;
+                spawnPizza();
+                scoreDisplay.textContent = `Score: ${score}`;
+            }
+
+            // Update obstacles
+            if (Math.random() < 0.02) spawnObstacle(); // 2% chance per frame to spawn
+            obstacles.forEach((obs, index) => {
+                obs.x += obs.speed;
+                if (checkCollision(player, obs)) {
+                    score -= 5;
+                    timeLeft -= 2;
+                    obstacles.splice(index, 1);
+                    scoreDisplay.textContent = `Score: ${score}`;
+                }
+                if (obs.x < -obs.width || obs.x > canvas.width) {
+                    obstacles.splice(index, 1);
+                }
+            });
+
+            // Timer
+            timeLeft -= 1 / 60;
+            if (timeLeft <= 0) {
+                gameActive = false;
+                alert(`Game Over! Deliveries: ${deliveriesCompleted}, Score: ${score}`);
+                resetGame();
+            }
+
+            if (!pizza.active && !player.hasPizza && !target.active) {
+                spawnPizza();
+            }
+        }
+
+        // Drawing
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw road (simple gray strip)
+            ctx.fillStyle = '#808080';
+            ctx.fillRect(0, canvas.height/2 - 20, canvas.width, 40);
+
+            // Draw pizza
+            if (pizza.active) {
+                ctx.fillStyle = pizza.color;
+                ctx.beginPath();
+                ctx.arc(pizza.x + pizza.width/2, pizza.y + pizza.height/2, pizza.width/2, 0, Math.PI * 2);
+                ctx.fill();
+                // Pizza topping (pepperoni)
+                ctx.fillStyle = '#8B0000';
+                ctx.beginPath();
+                ctx.arc(pizza.x + pizza.width/2 - 5, pizza.y + pizza.height/2 - 5, 3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw player
+            ctx.fillStyle = player.color;
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            if (player.hasPizza) {
+                ctx.fillStyle = pizza.color;
+                ctx.beginPath();
+                ctx.arc(player.x + player.width/2, player.y - 10, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw target
+            if (target.active) {
+                ctx.fillStyle = target.color;
+                ctx.fillRect(target.x, target.y, target.width, target.height);
+                // Roof
+                ctx.fillStyle = '#8B4513';
+                ctx.beginPath();
+                ctx.moveTo(target.x, target.y);
+                ctx.lineTo(target.x + target.width/2, target.y - 15);
+                ctx.lineTo(target.x + target.width, target.y);
+                ctx.fill();
+            }
+
+            // Draw obstacles
+            obstacles.forEach(obs => {
+                ctx.fillStyle = obs.color;
+                ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+            });
+
+            // UI
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Time: ${Math.ceil(timeLeft)}s`, 10, 30);
+            ctx.fillText(`Deliveries: ${deliveriesCompleted}`, 10, 60);
+        }
+
+        // Collision detection
+        function checkCollision(obj1, obj2) {
+            return obj1.x < obj2.x + obj2.width &&
+                   obj1.x + obj1.width > obj2.x &&
+                   obj1.y < obj2.y + obj2.height &&
+                   obj1.y + obj1.height > obj2.y;
+        }
+
+        // Reset game
+        function resetGame() {
+            player.x = 50;
+            player.y = 50;
+            player.hasPizza = false;
+            pizza.active = false;
+            target.active = false;
+            obstacles.length = 0;
+            score = 0;
+            timeLeft = 60;
+            deliveriesCompleted = 0;
+            gameActive = true;
+            scoreDisplay.textContent = `Score: ${score}`;
+            spawnPizza();
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start
+        spawnPizza();
+        gameLoop();
+    </script>
 </body>
 </html>
